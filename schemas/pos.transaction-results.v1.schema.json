@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/pos-term/infra/schemas/pos.transaction-results.v1.schema.json",
+  "title": "pos.transaction-results.v1 message value",
+  "description": "Final processing result of a payment. Key: terminal_id. Header event_type: transaction.processed.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "transaction_id",
+    "terminal_id",
+    "status",
+    "reason",
+    "processed_at"
+  ],
+  "properties": {
+    "schema_version": {
+      "description": "Schema version.",
+      "const": 1
+    },
+    "transaction_id": {
+      "description": "UUIDv7 of the transaction from pos.transactions.v1.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "terminal_id": {
+      "description": "Terminal the result is addressed to. Also used as the Kafka message key.",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{1,64}$"
+    },
+    "status": {
+      "description": "Final status. The intermediate pending state is not published.",
+      "enum": ["success", "failed"]
+    },
+    "reason": {
+      "description": "null on success, otherwise a reason code in UPPER_SNAKE_CASE (e.g. LIMIT_EXCEEDED). The list of codes is not fixed yet.",
+      "type": ["string", "null"],
+      "pattern": "^[A-Z][A-Z0-9_]*$"
+    },
+    "processed_at": {
+      "description": "Processing time in UTC, RFC 3339 with milliseconds.",
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "status": { "const": "success" } }, "required": ["status"] },
+      "then": { "properties": { "reason": { "type": "null" } } }
+    },
+    {
+      "if": { "properties": { "status": { "const": "failed" } }, "required": ["status"] },
+      "then": { "properties": { "reason": { "type": "string" } } }
+    }
+  ]
+}
