@@ -62,5 +62,41 @@ services:
       DYNAMIC_CONFIG_ENABLED: "false"
     restart: unless-stopped
 
+  postgres:
+    image: postgres:16-alpine
+    container_name: pos-postgres
+    ports:
+      # Exposed on the host for local tooling (psql, DBeaver, ...)
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: pos
+      POSTGRES_USER: pos
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-pos}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pos -d pos"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: pos-redis
+    ports:
+      # Exposed on the host for local debugging (redis-cli)
+      - "6379:6379"
+    # No volume: it is only a dedup filter with TTL, not a source of truth (see infra/docs/kafka).
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+    restart: unless-stopped
+
 volumes:
   kafka_data:
+  postgres_data:
