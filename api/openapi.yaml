@@ -1,0 +1,302 @@
+openapi: 3.1.0
+
+info:
+  title: pos-term payment-processor API
+  version: 1.0.0
+  description: |
+    Read-only REST API of payment-processor for the cashier app (mobile-dashboard).
+
+    Transactions are created by terminals through Kafka (see infra/docs/kafka), not through this API.
+    The source of truth for statuses and history is Postgres.
+
+    Conventions shared with the Kafka contract:
+    - amounts are integers in the minor unit of the currency (`amount_minor`);
+    - time is RFC 3339 in UTC with milliseconds;
+    - `transaction_id` is a UUIDv7, so ordering by it is ordering by creation time.
+
+servers:
+  - url: http://localhost:8080
+    description: Local payment-processor
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: transactions
+  - name: terminals
+  - name: system
+
+paths:
+  /v1/transactions:
+    get:
+      tags: [transactions]
+      operationId: listTransactions
+      summary: Transaction history
+      description: |
+        Newest first (by `transaction_id`, descending). Cursor pagination:
+        pass `next_cursor` of the previous page as `cursor`.
+      parameters:
+        - name: terminal_id
+          in: query
+          schema: { $ref: "#/components/schemas/TerminalId" }
+        - name: status
+          in: query
+          schema: { $ref: "#/components/schemas/Status" }
+        - name: from
+          in: query
+          description: Only transactions with `created_at` >= this time.
+          schema: { type: string, format: date-time }
+        - name: to
+          in: query
+          description: Only transactions with `created_at` < this time.
+          schema: { type: string, format: date-time }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+        - name: cursor
+          in: query
+          description: Opaque cursor from `next_cursor`.
+          schema: { type: string }
+      responses:
+        "200":
+          description: A page of transactions.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TransactionPage" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /v1/transactions/{transaction_id}:
+    get:
+      tags: [transactions]
+      operationId: getTransaction
+      summary: Status of one transaction
+      parameters:
+        - name: transaction_id
+          in: path
+          required: true
+          schema: { $ref: "#/components/schemas/TransactionId" }
+      responses:
+        "200":
+          description: The transaction.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Transaction" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /v1/transactions/stream:
+    get:
+      tags: [transactions]
+      operationId: streamTransactions
+      summary: Real-time transaction updates (SSE)
+      description: |
+        Server-Sent Events stream (`text/event-stream`). Every status change of a transaction
+        (creation as `pending`, then `success` or `failed`) is sent as one `transaction.updated` event
+        whose `data` is a JSON `Transaction`.
+
+        - The SSE `id` of an event is an opaque, monotonically increasing value. After a disconnect the client
+          reconnects with the `Last-Event-ID` header and the server replays the events it missed.
+        - If the server can no longer replay from the given id, it sends a `resync` event first.
+          The client must then reload history via `GET /v1/transactions` and continue with the stream.
+        - The server sends a comment line (`:`) every 15 seconds as a keep-alive.
+        - The stream is shared by all instances of payment-processor (events are fanned out through Redis),
+          so it does not matter which instance the client is connected to.
+
+        The `Authorization` header is required, so use an SSE client that can set headers (e.g. OkHttp-sse).
+      parameters:
+        - name: terminal_id
+          in: query
+          description: Only events of this terminal. Without it, events of all terminals are sent.
+          schema: { $ref: "#/components/schemas/TerminalId" }
+        - name: status
+          in: query
+          schema: { $ref: "#/components/schemas/Status" }
+        - name: Last-Event-ID
+          in: header
+          schema: { type: string }
+      responses:
+        "200":
+          description: Event stream.
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                description: |
+                  SSE frames. Example:
+
+                      id: 18442
+                      event: transaction.updated
+                      data: {"transaction_id":"0192f0c4-7a3e-7b21-9d4e-2c1f8a6b5e10","terminal_id":"term-001","amount_minor":15050,"currency":"RUB","status":"success","reason":null,"created_at":"2026-09-19T10:15:30.123Z","processed_at":"2026-09-19T10:15:31.005Z"}
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /v1/terminals:
+    get:
+      tags: [terminals]
+      operationId: listTerminals
+      summary: Known terminals
+      description: Terminals that have sent at least one transaction. Used for the terminal filter in the app.
+      responses:
+        "200":
+          description: All known terminals.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/Terminal" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /healthz:
+    get:
+      tags: [system]
+      operationId: healthz
+      summary: Liveness probe
+      security: []
+      responses:
+        "200":
+          description: The service is alive.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status: { const: ok }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: |
+        Static token shared by cashier apps, configured on payment-processor.
+        Prototype-level protection: no per-user accounts, no token rotation.
+
+  schemas:
+    TransactionId:
+      description: UUIDv7 generated by the terminal. Same as in pos.transactions.v1.
+      type: string
+      pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+      examples: ["0192f0c4-7a3e-7b21-9d4e-2c1f8a6b5e10"]
+
+    TerminalId:
+      description: Terminal identifier. Same as in pos.transactions.v1.
+      type: string
+      pattern: "^[A-Za-z0-9_-]{1,64}$"
+      examples: ["term-001"]
+
+    Status:
+      description: |
+        `pending` exists only in this API (internal state of payment-processor);
+        Kafka results carry only `success` or `failed`.
+      enum: [pending, success, failed]
+
+    Reason:
+      description: |
+        null unless `status` is `failed`; then a reason code in UPPER_SNAKE_CASE (e.g. LIMIT_EXCEEDED).
+        The list of codes is not fixed yet and is shared with pos.transaction-results.v1.
+      type: [string, "null"]
+      pattern: "^[A-Z][A-Z0-9_]*$"
+
+    Transaction:
+      type: object
+      additionalProperties: false
+      required: [transaction_id, terminal_id, amount_minor, currency, status, reason, created_at, processed_at]
+      properties:
+        transaction_id: { $ref: "#/components/schemas/TransactionId" }
+        terminal_id: { $ref: "#/components/schemas/TerminalId" }
+        amount_minor:
+          description: Amount in the minor unit of the currency (kopecks for RUB), greater than 0.
+          type: integer
+          minimum: 1
+        currency:
+          description: ISO 4217 code.
+          type: string
+          pattern: "^[A-Z]{3}$"
+        status: { $ref: "#/components/schemas/Status" }
+        reason: { $ref: "#/components/schemas/Reason" }
+        created_at:
+          description: Terminal time in UTC, RFC 3339 with milliseconds.
+          type: string
+          format: date-time
+        processed_at:
+          description: Processing time in UTC. null while the status is `pending`.
+          type: [string, "null"]
+          format: date-time
+      examples:
+        - transaction_id: "0192f0c4-7a3e-7b21-9d4e-2c1f8a6b5e10"
+          terminal_id: term-001
+          amount_minor: 15050
+          currency: RUB
+          status: failed
+          reason: LIMIT_EXCEEDED
+          created_at: "2026-09-19T10:15:30.123Z"
+          processed_at: "2026-09-19T10:15:31.005Z"
+
+    TransactionPage:
+      type: object
+      additionalProperties: false
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Transaction" }
+        next_cursor:
+          description: Cursor of the next page, null on the last page.
+          type: [string, "null"]
+
+    Terminal:
+      type: object
+      additionalProperties: false
+      required: [terminal_id, last_transaction_at]
+      properties:
+        terminal_id: { $ref: "#/components/schemas/TerminalId" }
+        last_transaction_at:
+          description: "`created_at` of the latest transaction of the terminal."
+          type: string
+          format: date-time
+
+    Problem:
+      description: Error in the RFC 9457 format.
+      type: object
+      required: [type, title, status, code]
+      properties:
+        type: { type: string, description: "URI reference identifying the error type; `about:blank` if there is nothing more specific." }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        code:
+          description: Stable machine-readable error code.
+          enum: [invalid_parameter, unauthorized, not_found, internal_error]
+
+  responses:
+    BadRequest:
+      description: Invalid parameter (code `invalid_parameter`).
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    Unauthorized:
+      description: Missing or wrong token (code `unauthorized`).
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    NotFound:
+      description: Transaction not found (code `not_found`).
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    InternalError:
+      description: Server error (code `internal_error`).
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
