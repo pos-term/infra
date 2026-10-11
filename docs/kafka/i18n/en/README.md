@@ -136,7 +136,7 @@ Only errors that a retry cannot fix go to the DLQ. A failed payment (for example
 - **Idempotency.** The terminal generates `transaction_id` at confirmation time, so a retry from the local queue carries the same ID. Redis (`SET NX` with a TTL) acts as a fast duplicate filter, and the source of truth is the unique index in Postgres (`ON CONFLICT DO NOTHING`).
 - **Producer (terminal):** `acks=all`, `enable.idempotence=true`, retries with `delivery.timeout.ms`.
 - **Consumer (processor):** `enable.auto.commit=false`. Order: write to Postgres, publish the result, commit the offset.
-- **Duplicate on input.** If the processor crashes after publishing the result but before committing the offset, on redelivery it does not recompute the payment: it reads the stored status from Postgres and republishes the result. The terminal ignores an already-handled `transaction_id`. This gives at-least-once result delivery, so a transactional outbox is not needed.
+- **Duplicate on input.** If the processor crashes after publishing the result but before committing the offset, on redelivery it does not recompute the payment: it reads the stored status from Postgres and republishes the result (if Postgres already records it as published, a repeated message publishes nothing). The terminal ignores an already-handled `transaction_id`. This gives at-least-once result delivery, so a transactional outbox is not needed.
 
 ## Why JSON and not Protobuf or Avro
 
