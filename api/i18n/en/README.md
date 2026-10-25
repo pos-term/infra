@@ -10,7 +10,7 @@ REST is read-only. Transactions are created by terminals through Kafka; the mess
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/v1/transactions` | Transaction history. Filters: `terminal_id`, `status`, `from`, `to`. Pagination: `limit`, `cursor` |
+| GET | `/v1/transactions` | Transaction history with filters and cursor pagination |
 | GET | `/v1/transactions/{transaction_id}` | Status of one transaction |
 | GET | `/v1/transactions/stream` | Real-time updates (SSE) |
 | GET | `/v1/terminals` | Known terminals, for the filter in the app |
@@ -22,6 +22,7 @@ REST is read-only. Transactions are created by terminals through Kafka; the mess
 - **Real time: SSE.** The stream is server-to-client only, which is simpler to implement than WebSocket. Every status change arrives as a `transaction.updated` event whose body is a `Transaction`. After a disconnect the client reconnects with the `Last-Event-ID` header and the server replays what was missed. If there is nothing left to replay from, the server first sends a `resync` event: the client reloads history via `GET /v1/transactions`. The server sends a keep-alive every 15 seconds. There may be several processor instances; events are fanned out between them through Redis pub/sub.
 - **Authentication:** a static Bearer token shared by cashier apps and set in the processor configuration. This is prototype-level protection: no accounts, no token rotation. Every endpoint except `/healthz` requires the token. The SSE client must be able to set headers (e.g. OkHttp-sse).
 - **Scope:** a cashier sees transactions of all terminals; the `terminal_id` filter is optional.
+- **History filters:** terminal, one or more `status` values, a `transaction_id` prefix, an `amount_minor` range, currency, failure reason, and the `from <= created_at < to` time interval are supported. All filters are optional and combined with AND; multiple statuses are combined with OR. `max_amount_minor` must not be less than `min_amount_minor`.
 - **Pagination:** cursor-based, newest first. The order is defined by `transaction_id`: UUIDv7 is ordered by creation time. The cursor is opaque and taken from `next_cursor`.
 - **Errors:** RFC 9457 format (`application/problem+json`) with a stable `code` field: `invalid_parameter`, `unauthorized`, `not_found`, `internal_error`.
 - **`reason` codes:** the list is not fixed yet; it is shared with the Kafka contract (`pos.transaction-results.v1`).

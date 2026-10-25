@@ -2,7 +2,7 @@ openapi: 3.1.0
 
 info:
   title: pos-term payment-processor API
-  version: 1.0.0
+  version: 1.1.0
   description: |
     Read-only REST API of payment-processor for the cashier app (mobile-dashboard).
 
@@ -41,7 +41,34 @@ paths:
           schema: { $ref: "#/components/schemas/TerminalId" }
         - name: status
           in: query
-          schema: { $ref: "#/components/schemas/Status" }
+          description: One or more transaction statuses. Repeat the parameter for multiple values.
+          style: form
+          explode: true
+          schema:
+            type: array
+            minItems: 1
+            uniqueItems: true
+            items: { $ref: "#/components/schemas/Status" }
+        - name: transaction_id_prefix
+          in: query
+          description: Case-insensitive transaction ID prefix.
+          schema: { type: string, minLength: 1, maxLength: 64 }
+        - name: min_amount_minor
+          in: query
+          description: Only transactions with `amount_minor` >= this value.
+          schema: { type: integer, format: int64, minimum: 0 }
+        - name: max_amount_minor
+          in: query
+          description: Only transactions with `amount_minor` <= this value. Must not be less than `min_amount_minor`.
+          schema: { type: integer, format: int64, minimum: 0 }
+        - name: currency
+          in: query
+          description: Exact ISO 4217 alphabetic currency code.
+          schema: { type: string, pattern: "^[A-Z]{3}$", example: RUB }
+        - name: reason
+          in: query
+          description: Exact failure reason code. Matching is case-insensitive.
+          schema: { type: string, minLength: 1, maxLength: 64, example: LIMIT_EXCEEDED }
         - name: from
           in: query
           description: Only transactions with `created_at` >= this time.
