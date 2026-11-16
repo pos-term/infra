@@ -19,5 +19,6 @@ docker compose up --build
 
 - [REST API](api/README.md): OpenAPI, Swagger UI на http://localhost:8089
 - [Kafka](docs/kafka/README.md): топики и схемы сообщений
+- [Метрики](docs/monitoring/README.md): счётчики Prometheus для процессора
 
 > Общая информация по проекту и участниках: https://github.com/pos-term/.github/blob/main/profile/README.md
