@@ -129,6 +129,7 @@ services:
       SWAGGER_JSON: /spec/openapi.yaml
     volumes:
       - ./api/openapi.yaml:/spec/openapi.yaml:ro
+      - ./api/swagger-nginx.conf.template:/etc/nginx/templates/default.conf.template:ro
     restart: unless-stopped
 
 volumes:

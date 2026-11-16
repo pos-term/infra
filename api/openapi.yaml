@@ -15,8 +15,10 @@ info:
     - `transaction_id` is a UUIDv7, so ordering by it is ordering by creation time.
 
 servers:
+  - url: /
+    description: Swagger UI proxy (same origin)
   - url: http://localhost:8080
-    description: Local payment-processor
+    description: Direct local payment-processor
 
 security:
   - bearerAuth: []

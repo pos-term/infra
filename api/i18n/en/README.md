@@ -6,6 +6,8 @@ The REST API contract between `payment-processor` and the cashier Android app `m
 
 REST is read-only. Transactions are created by terminals through Kafka; the message format is described in [docs/kafka](../../../docs/kafka/i18n/en/README.md).
 
+To call the API from Swagger UI, keep the default server and enter the processor token in **Authorize**. Swagger sends requests through the proxy on its own port, `8089`. API clients such as `curl` and Android can call the processor directly at `http://localhost:8080`.
+
 ## Endpoints
 
 | Method | Path | Purpose |
