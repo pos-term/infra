@@ -19,5 +19,6 @@ The `payment-processor` service is built from the sibling repository: `payment-p
 
 - [REST API](../../api/i18n/en/README.md): OpenAPI, Swagger UI at http://localhost:8089
 - [Kafka](../../docs/kafka/i18n/en/README.md): topics and message schemas
+- [Metrics](../../docs/monitoring/i18n/en/README.md): processor counters for Prometheus
 
 > General project information and participants: https://github.com/pos-term/.github/blob/main/i18n/README_EN.md
