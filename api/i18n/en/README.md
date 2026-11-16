@@ -17,12 +17,15 @@ To call the API from Swagger UI, keep the default server and enter the processor
 | GET | `/v1/transactions/stream` | Real-time updates (SSE) |
 | GET | `/v1/terminals` | Known terminals, for the filter in the app |
 | GET | `/healthz` | Liveness probe, no token required |
+| GET | `/readyz` | Readiness probe for Postgres and Kafka, no token required |
+
+`/healthz` confirms that the HTTP server responds. The `/readyz` contract specifies `200 {"status":"ready"}` when Postgres and Kafka are reachable and `503 {"status":"not_ready"}` if either check fails or times out. Redis outages do not affect readiness.
 
 ## Decisions
 
 - **The `Transaction` model** uses the same field names and formats as the Kafka contract: `transaction_id` (UUIDv7), `terminal_id`, `amount_minor`, `currency`, `reason`, time as RFC 3339 UTC with milliseconds. REST adds the `pending` status: it is not published to Kafka, but the cashier needs to see a payment that is being processed.
 - **Real time: SSE.** The stream is server-to-client only, which is simpler to implement than WebSocket. Every status change arrives as a `transaction.updated` event whose body is a `Transaction`. After a disconnect the client reconnects with the `Last-Event-ID` header and the server replays what was missed. If there is nothing left to replay from, the server first sends a `resync` event: the client reloads history via `GET /v1/transactions`. The server sends a keep-alive every 15 seconds. There may be several processor instances; events are fanned out between them through Redis pub/sub.
-- **Authentication:** a static Bearer token shared by cashier apps and set in the processor configuration. This is prototype-level protection: no accounts, no token rotation. Every endpoint except `/healthz` requires the token. The SSE client must be able to set headers (e.g. OkHttp-sse).
+- **Authentication:** a static Bearer token shared by cashier apps and set in the processor configuration. This is prototype-level protection: no accounts, no token rotation. Endpoints under `/v1/*` require the token. The SSE client must be able to set headers (e.g. OkHttp-sse).
 - **Scope:** a cashier sees transactions of all terminals; the `terminal_id` filter is optional.
 - **History filters:** terminal, one or more `status` values, a `transaction_id` prefix, an `amount_minor` range, currency, failure reason, and the `from <= created_at < to` time interval are supported. All filters are optional and combined with AND; multiple statuses are combined with OR. `max_amount_minor` must not be less than `min_amount_minor`.
 - **Pagination:** cursor-based, newest first. The order is defined by `transaction_id`: UUIDv7 is ordered by creation time. The cursor is opaque and taken from `next_cursor`.

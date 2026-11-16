@@ -202,6 +202,41 @@ paths:
                 properties:
                   status: { const: ok }
 
+  /readyz:
+    get:
+      tags: [system]
+      operationId: readyz
+      summary: Readiness probe
+      description: |
+        Checks whether payment-processor can reach Postgres and Kafka.
+        A failed or timed-out check makes the service unready. Redis is
+        optional for processing payments and does not affect readiness.
+        The response omits dependency error details.
+      security: []
+      responses:
+        "200":
+          description: Both required dependency checks succeeded.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [status]
+                properties:
+                  status: { type: string, const: ready }
+              example: { status: ready }
+        "503":
+          description: At least one required dependency check failed or timed out.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [status]
+                properties:
+                  status: { type: string, const: not_ready }
+              example: { status: not_ready }
+
 components:
   securitySchemes:
     bearerAuth:
